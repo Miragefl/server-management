@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var store: Store
@@ -10,6 +11,7 @@ struct ContentView: View {
     }
 
     @State private var selection: SidebarSelection?
+    @State private var didClearInitialFocus = false
 
     var body: some View {
         NavigationSplitView {
@@ -33,6 +35,15 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 860, minHeight: 560)
+        // 侧栏不再用 List 后，窗口变 key 时初始焦点会落到工具栏按钮上并画出蓝色焦点环；
+        // 在窗口真正成为 key 之后再清空第一响应者（仅首次，onAppear 时机太早窗口还不是 key）
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            guard !didClearInitialFocus else { return }
+            didClearInitialFocus = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+        }
     }
 
     private var emptyView: some View {

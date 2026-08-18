@@ -37,44 +37,14 @@ struct ServerListView: View {
     }
 
     var body: some View {
-        List(selection: $selection) {
-            Section(isExpanded: $serversExpanded) {
-                ForEach(filteredServers) { server in
-                    serverRow(server)
-                        .tag(ContentView.SidebarSelection.server(server.id))
-                        .contextMenu {
-                            Button("编辑…") { editingServer = server }
-                            Divider()
-                            Button("删除…", role: .destructive) { serverPendingDelete = server }
-                        }
-                }
-            } header: {
-                sectionHeader(
-                    title: "服务器",
-                    count: filteredServers.count,
-                    icon: "server.rack",
-                    isExpanded: serversExpanded
-                ) { serversExpanded.toggle() }
+        // 用 pinnedViews 让「服务器 / 服务」区块头吸顶，滚动时不消失
+        // （macOS 上 List 的 Section header 不固定，会随内容滚走）
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                serverSection
+                serviceSection
             }
-
-            Section(isExpanded: $servicesExpanded) {
-                ForEach(filteredServices) { service in
-                    serviceRow(service)
-                        .tag(ContentView.SidebarSelection.service(service.id))
-                        .contextMenu {
-                            Button("编辑…") { editingService = service }
-                            Divider()
-                            Button("删除…", role: .destructive) { servicePendingDelete = service }
-                        }
-                }
-            } header: {
-                sectionHeader(
-                    title: "服务",
-                    count: filteredServices.count,
-                    icon: "shippingbox",
-                    isExpanded: servicesExpanded
-                ) { servicesExpanded.toggle() }
-            }
+            .padding(.vertical, 4)
         }
         .searchable(text: $keyword, prompt: Text("多关键字空格分隔，如：kafka sit"))
         .overlay {
@@ -110,6 +80,7 @@ struct ServerListView: View {
                 } label: {
                     Label("新增", systemImage: "plus")
                 }
+                .focusEffectDisabled()
             }
         }
         .sheet(isPresented: $isShowingSettings) {
@@ -173,9 +144,63 @@ struct ServerListView: View {
         }
     }
 
+    // MARK: - 区块
+
+    private var serverSection: some View {
+        Section {
+            if serversExpanded {
+                ForEach(filteredServers) { server in
+                    sidebarRow(serverRow(server), id: .server(server.id)) {
+                        Button("编辑…") { editingServer = server }
+                        Divider()
+                        Button("删除…", role: .destructive) { serverPendingDelete = server }
+                    }
+                }
+            }
+        } header: {
+            sectionHeader(
+                title: "服务器",
+                count: filteredServers.count,
+                icon: "server.rack",
+                isExpanded: serversExpanded
+            ) { serversExpanded.toggle() }
+        }
+    }
+
+    private var serviceSection: some View {
+        Section {
+            if servicesExpanded {
+                ForEach(filteredServices) { service in
+                    sidebarRow(serviceRow(service), id: .service(service.id)) {
+                        Button("编辑…") { editingService = service }
+                        Divider()
+                        Button("删除…", role: .destructive) { servicePendingDelete = service }
+                    }
+                }
+            }
+        } header: {
+            sectionHeader(
+                title: "服务",
+                count: filteredServices.count,
+                icon: "shippingbox",
+                isExpanded: servicesExpanded
+            ) { servicesExpanded.toggle() }
+        }
+    }
+
+    /// 行容器：点击选中 + 选中/悬停高亮 + 右键菜单（替代 List 原生 selection）
+    private func sidebarRow(_ content: some View, id: ContentView.SidebarSelection, @ViewBuilder menu: () -> some View) -> some View {
+        content
+            .modifier(SidebarRowHighlight(isSelected: selection == id))
+            .contentShape(Rectangle())
+            .onTapGesture { selection = id }
+            .contextMenu(menuItems: menu)
+            .padding(.horizontal, 8)
+    }
+
     // MARK: - 行视图
 
-    /// 可点击折叠的区块头：图标 + 标题 + 计数（折叠箭头由系统 Section 渲染，避免重复）
+    /// 可点击折叠的区块头：图标 + 标题 + 计数 + 折叠箭头（吸顶时靠材质背景遮挡滚动内容）
     private func sectionHeader(title: String, count: Int, icon: String, isExpanded: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
@@ -188,8 +213,14 @@ struct ServerListView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
+            .background(.ultraThinMaterial, in: Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -251,4 +282,24 @@ struct ServerListView: View {
     }
 
     /// 环境配色：prod 红 / uat 橙 / sit 蓝 / 其他灰
+}
+
+/// 侧栏行高亮：选中淡强调色、悬停淡灰
+private struct SidebarRowHighlight: ViewModifier {
+    let isSelected: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.accentColor.opacity(0.22))
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.primary.opacity(0.06))
+                }
+            }
+            .onHover { isHovered = $0 }
+    }
 }
