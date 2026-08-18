@@ -1,0 +1,72 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 主体渐变：深蓝到青 -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E3A5F"/>
+      <stop offset="1" stop-color="#0F2440"/>
+    </linearGradient>
+    <!-- 高光渐变 -->
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <!-- 单元格微渐变 -->
+    <linearGradient id="cell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2C4F7C"/>
+      <stop offset="1" stop-color="#223E63"/>
+    </linearGradient>
+  </defs>
+
+  <!-- macOS squircle 底板 -->
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="228" fill="url(#gloss)"/>
+  <!-- 细描边增加立体感 -->
+  <rect x="6" y="6" width="1012" height="1012" rx="224" fill="none"
+        stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4"/>
+
+  <!-- 服务器机架：三层单元 -->
+  <g>
+    <!-- 单元模板：圆角矩形 + 指示灯 + 散热孔 -->
+    <!-- 第一层 -->
+    <rect x="252" y="238" width="520" height="150" rx="34" fill="url(#cell)"
+          stroke="#5B8AC0" stroke-opacity="0.55" stroke-width="3"/>
+    <circle cx="312" cy="313" r="17" fill="#30A46C"/>
+    <circle cx="312" cy="313" r="26" fill="#30A46C" fill-opacity="0.25"/>
+    <g fill="#7FA8D4" fill-opacity="0.6">
+      <rect x="360" y="296" width="14" height="34" rx="7"/>
+      <rect x="392" y="296" width="14" height="34" rx="7"/>
+      <rect x="424" y="296" width="14" height="34" rx="7"/>
+      <rect x="456" y="296" width="14" height="34" rx="7"/>
+    </g>
+    <rect x="648" y="288" width="82" height="50" rx="25" fill="#0091FF" fill-opacity="0.22"/>
+    <rect x="664" y="306" width="50" height="14" rx="7" fill="#0091FF"/>
+
+    <!-- 第二层 -->
+    <rect x="252" y="428" width="520" height="150" rx="34" fill="url(#cell)"
+          stroke="#5B8AC0" stroke-opacity="0.55" stroke-width="3"/>
+    <circle cx="312" cy="503" r="17" fill="#30A46C"/>
+    <circle cx="312" cy="503" r="26" fill="#30A46C" fill-opacity="0.25"/>
+    <g fill="#7FA8D4" fill-opacity="0.6">
+      <rect x="360" y="486" width="14" height="34" rx="7"/>
+      <rect x="392" y="486" width="14" height="34" rx="7"/>
+      <rect x="424" y="486" width="14" height="34" rx="7"/>
+      <rect x="456" y="486" width="14" height="34" rx="7"/>
+    </g>
+    <rect x="648" y="478" width="82" height="50" rx="25" fill="#30A46C" fill-opacity="0.22"/>
+    <rect x="664" y="496" width="50" height="14" rx="7" fill="#30A46C"/>
+
+    <!-- 第三层 -->
+    <rect x="252" y="618" width="520" height="150" rx="34" fill="url(#cell)"
+          stroke="#5B8AC0" stroke-opacity="0.55" stroke-width="3"/>
+    <circle cx="312" cy="693" r="17" fill="#F76B15"/>
+    <circle cx="312" cy="693" r="26" fill="#F76B15" fill-opacity="0.25"/>
+    <g fill="#7FA8D4" fill-opacity="0.6">
+      <rect x="360" y="676" width="14" height="34" rx="7"/>
+      <rect x="392" y="676" width="14" height="34" rx="7"/>
+      <rect x="424" y="676" width="14" height="34" rx="7"/>
+      <rect x="456" y="676" width="14" height="34" rx="7"/>
+    </g>
+    <rect x="648" y="668" width="82" height="50" rx="25" fill="#F76B15" fill-opacity="0.22"/>
+    <rect x="664" y="686" width="50" height="14" rx="7" fill="#F76B15"/>
+  </g>
+</svg>

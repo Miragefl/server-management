@@ -1,0 +1,15 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# 构建产物
+dist/
+*.app
+*.icns
+
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
