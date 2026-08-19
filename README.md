@@ -14,8 +14,22 @@ brew install --cask --no-quarantine Miragefl/tap/server-management
 
 ```bash
 brew update
-brew upgrade --cask --no-quarantine server-management
+brew upgrade --cask server-management
 ```
+
+升级后如果打开提示「已损坏」，去掉隔离属性即可：
+
+```bash
+xattr -cr /Applications/ServerManagement.app
+```
+
+> **关于 `--no-quarantine`**：本应用未经 Apple 公证（需 $99/年开发者账号），带隔离属性安装会被 macOS 误报「已损坏」。若已在 `~/.zshrc` 中配置过：
+>
+> ```bash
+> export HOMEBREW_CASK_OPTS="--no-quarantine"
+> ```
+>
+> 则升级后无需再执行 `xattr`。
 
 > **关于 `--no-quarantine`**：本应用未经 Apple 公证（需 $99/年开发者账号），带隔离属性安装会被 macOS 误报「已损坏」。`--no-quarantine` 跳过隔离标记即可正常使用。也可在 `~/.zshrc` 中一劳永逸：
 >
