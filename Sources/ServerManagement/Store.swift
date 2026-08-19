@@ -12,6 +12,8 @@ final class Store: ObservableObject {
     @Published private(set) var envDefinitions: [EnvDefinition] = EnvDefinition.defaults
     /// 操作系统字典（候选）
     @Published private(set) var osDefinitions: [OSDefinition] = OSDefinition.defaults
+    /// 分组字典（服务器与服务共用）
+    @Published private(set) var groupDefinitions: [GroupDefinition] = GroupDefinition.defaults
 
     /// 持久化错误，UI 可展示
     @Published private(set) var lastError: String?
@@ -101,7 +103,7 @@ final class Store: ObservableObject {
     }
 
     /// 按关键字过滤服务器：空格分隔多个关键字，须全部命中同一载体（AND）。
-    /// 载体 = 服务器自身（hostname/ip/os）或其绑定的某个服务（服务名/环境）
+    /// 载体 = 服务器自身（hostname/ip/os/group）或其绑定的某个服务（服务名/环境/分组）
     func filteredServers(keyword: String) -> [Server] {
         let queries = keyword
             .lowercased()
@@ -115,6 +117,7 @@ final class Store: ObservableObject {
                 server.hostname.lowercased().contains(query)
                     || server.ips.contains { $0.lowercased().contains(query) }
                     || server.os.lowercased().contains(query)
+                    || server.group.lowercased().contains(query)
             }) {
                 return true
             }
@@ -125,6 +128,7 @@ final class Store: ObservableObject {
                     && queries.allSatisfy { query in
                         service.name.lowercased().contains(query)
                             || service.envs.contains { $0.lowercased().contains(query) }
+                            || service.group.lowercased().contains(query)
                     }
             }
         }
@@ -304,6 +308,54 @@ final class Store: ObservableObject {
         persist()
     }
 
+    /// 新增分组（重名忽略）
+    @discardableResult
+    func addGroup(name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !groupDefinitions.contains(where: { $0.name == trimmed }) else { return false }
+        groupDefinitions.append(GroupDefinition(name: trimmed))
+        persist()
+        return true
+    }
+
+    /// 更新分组名（同步刷写所有引用它的服务器与服务）
+    @discardableResult
+    func updateGroup(_ id: UUID, name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let index = groupDefinitions.firstIndex(where: { $0.id == id }),
+              !trimmed.isEmpty,
+              !groupDefinitions.contains(where: { $0.id != id && $0.name == trimmed })
+        else { return false }
+
+        let oldName = groupDefinitions[index].name
+        groupDefinitions[index].name = trimmed
+
+        if oldName != trimmed {
+            for serverIndex in servers.indices where servers[serverIndex].group == oldName {
+                servers[serverIndex].group = trimmed
+            }
+            for serviceIndex in services.indices where services[serviceIndex].group == oldName {
+                services[serviceIndex].group = trimmed
+            }
+        }
+        persist()
+        return true
+    }
+
+    /// 删除分组字典项（成员归属清空，变为未分组）
+    func deleteGroup(_ id: UUID) {
+        guard let target = groupDefinitions.first(where: { $0.id == id }) else { return }
+        groupDefinitions.removeAll { $0.id == id }
+        for serverIndex in servers.indices where servers[serverIndex].group == target.name {
+            servers[serverIndex].group = ""
+        }
+        for serviceIndex in services.indices where services[serviceIndex].group == target.name {
+            services[serviceIndex].group = ""
+        }
+        persist()
+    }
+
     // MARK: - 持久化
 
     private struct Snapshot: Codable {
@@ -312,21 +364,25 @@ final class Store: ObservableObject {
         var deployments: [Deployment]
         var envDefinitions: [EnvDefinition]?
         var osDefinitions: [OSDefinition]?
+        var groupDefinitions: [GroupDefinition]?
 
         /// 兼容旧 JSON（v1：services 内嵌 serverID/groupID）的自定义解码；磁盘 key 保持 bindings
         enum CodingKeys: String, CodingKey {
             case servers, services, deployments = "bindings"
             case envDefinitions = "envDictionary"
             case osDefinitions = "osDictionary"
+            case groupDefinitions = "groupDictionary"
         }
 
         init(servers: [Server], services: [Service], deployments: [Deployment],
-             envDefinitions: [EnvDefinition]? = nil, osDefinitions: [OSDefinition]? = nil) {
+             envDefinitions: [EnvDefinition]? = nil, osDefinitions: [OSDefinition]? = nil,
+             groupDefinitions: [GroupDefinition]? = nil) {
             self.servers = servers
             self.services = services
             self.deployments = deployments
             self.envDefinitions = envDefinitions
             self.osDefinitions = osDefinitions
+            self.groupDefinitions = groupDefinitions
         }
 
         init(from decoder: Decoder) throws {
@@ -335,6 +391,7 @@ final class Store: ObservableObject {
             // 字典缺省（旧数据）时由 Store 落内置默认
             envDefinitions = try c.decodeIfPresent([EnvDefinition].self, forKey: .envDefinitions)
             osDefinitions = try c.decodeIfPresent([OSDefinition].self, forKey: .osDefinitions)
+            groupDefinitions = try c.decodeIfPresent([GroupDefinition].self, forKey: .groupDefinitions)
 
             let legacy = try c.decodeIfPresent([LegacyServiceRecord].self, forKey: .services) ?? []
             var migrated: [Service] = []
@@ -381,6 +438,7 @@ final class Store: ObservableObject {
             try c.encode(deployments, forKey: .deployments)
             try c.encodeIfPresent(envDefinitions, forKey: .envDefinitions)
             try c.encodeIfPresent(osDefinitions, forKey: .osDefinitions)
+            try c.encodeIfPresent(groupDefinitions, forKey: .groupDefinitions)
         }
     }
 
@@ -398,6 +456,7 @@ final class Store: ObservableObject {
             deployments = snapshot.deployments
             envDefinitions = snapshot.envDefinitions ?? EnvDefinition.defaults
             osDefinitions = snapshot.osDefinitions ?? OSDefinition.defaults
+            groupDefinitions = snapshot.groupDefinitions ?? GroupDefinition.defaults
         } catch {
             lastError = "读取数据失败：\(error.localizedDescription)"
         }
@@ -413,7 +472,8 @@ final class Store: ObservableObject {
                 services: services,
                 deployments: deployments,
                 envDefinitions: envDefinitions,
-                osDefinitions: osDefinitions
+                osDefinitions: osDefinitions,
+                groupDefinitions: groupDefinitions
             ))
             try data.write(to: fileURL, options: .atomic)
             lastError = nil

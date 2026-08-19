@@ -318,6 +318,48 @@ struct StoreTests {
         #expect(store.osDefinitions.count == 8)
     }
 
+    @Test("分组字典：默认初始化 / 增改删 / 改名同步双实体 / 删除成员归未分组")
+    func testGroupDictionary() throws {
+        let store = try makeStore()
+        #expect(store.groupDefinitions.map(\.name) == ["测试", "生产"])
+
+        #expect(store.addGroup(name: " 预发 "))
+        #expect(!store.addGroup(name: "预发"))
+        #expect(store.groupDefinitions.last?.name == "预发")
+
+        // 改名同步服务器与服务存量
+        store.upsertServer(Server(hostname: "yd-vm121", ips: ["10.0.0.1"], group: "预发"))
+        store.upsertService(Service(name: "kafka", envs: ["sit"], ports: [], group: "预发"))
+        let id = store.groupDefinitions.first { $0.name == "预发" }!.id
+        #expect(store.updateGroup(id, name: "灰度"))
+        #expect(store.servers.first?.group == "灰度")
+        #expect(store.services.first?.group == "灰度")
+        // 重名拒绝
+        #expect(!store.updateGroup(id, name: "测试"))
+
+        // 删除：成员归属清空（未分组），服务与服务器记录保留
+        store.deleteGroup(id)
+        #expect(store.servers.first?.group == "")
+        #expect(store.services.first?.group == "")
+        #expect(!store.groupDefinitions.contains { $0.name == "灰度" })
+    }
+
+    @Test("分组搜索：按服务器或服务的分组名过滤")
+    func testGroupSearch() throws {
+        let store = try makeStore()
+        let prod = Server(hostname: "yd-vm121", ips: ["10.0.0.1"], group: "生产")
+        let test = Server(hostname: "test-01", ips: ["10.0.0.2"], group: "测试")
+        store.upsertServer(prod)
+        store.upsertServer(test)
+        let kafka = Service(name: "kafka", envs: ["sit"], ports: [], group: "测试")
+        store.upsertService(kafka)
+        // kafka（测试组）部署到生产服务器 → 搜「测试」经服务载体命中该生产服务器
+        store.bind([kafka.id], to: prod.id)
+
+        #expect(Set(store.filteredServers(keyword: "测试").map(\.hostname)) == ["test-01", "yd-vm121"])
+        #expect(store.filteredServers(keyword: "生产").map(\.hostname) == ["yd-vm121"])
+    }
+
     @Test("字典 round-trip：自定义颜色与新增项持久化")
     func testDictionaryRoundTrip() throws {
         let url = FileManager.default.temporaryDirectory
@@ -336,6 +378,21 @@ struct StoreTests {
         let legacy = Store(fileURL: legacyURL)
         #expect(legacy.envDefinitions == EnvDefinition.defaults)
         #expect(legacy.osDefinitions == OSDefinition.defaults)
+        #expect(legacy.groupDefinitions == GroupDefinition.defaults)
+        // 旧实体（无 group 字段）→ 未分组
+        let legacyEntityURL = FileManager.default.temporaryDirectory
+            .appending(path: "store-tests-\(UUID().uuidString).json")
+        try #"{"servers": [{"hostname": "old-1", "ip": "10.0.0.1"}], "services": [{"name": "old-svc", "env": "sit"}]}"#
+            .data(using: .utf8)!.write(to: legacyEntityURL)
+        let legacyEntity = Store(fileURL: legacyEntityURL)
+        #expect(legacyEntity.servers.first?.group == "")
+        #expect(legacyEntity.services.first?.group == "")
+        // 分组 round-trip
+        store.addGroup(name: "预发")
+        store.upsertServer(Server(hostname: "g1", ips: ["10.9.9.9"], group: "预发"))
+        let reloaded2 = Store(fileURL: url)
+        #expect(reloaded2.groupDefinitions.contains { $0.name == "预发" })
+        #expect(reloaded2.servers.first?.group == "预发")
     }
 
     @Test("颜色 hex 转换 round-trip 与预设色字节序")

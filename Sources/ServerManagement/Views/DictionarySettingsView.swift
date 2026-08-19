@@ -48,6 +48,7 @@ struct DictionarySettingsView: View {
     private enum Tab: String, CaseIterable, Identifiable {
         case env = "环境"
         case os = "操作系统"
+        case group = "分组"
         var id: String { rawValue }
     }
 
@@ -86,6 +87,7 @@ struct DictionarySettingsView: View {
                 switch tab {
                 case .env: EnvDictionaryView()
                 case .os: OSDictionaryView()
+                case .group: GroupDictionaryView()
                 }
             }
             .frame(maxHeight: .infinity)
@@ -155,14 +157,10 @@ private struct EnvColorPicker: View {
                     isCustomWellShown.toggle()
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(currentColor)
-                        .frame(width: 12, height: 12)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                // macOS 15+ borderlessButton Menu 自带下拉箭头，label 只放色点
+                Circle()
+                    .fill(currentColor)
+                    .frame(width: 12, height: 12)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -285,6 +283,7 @@ private struct EnvDictionaryView: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.caption)
+                        .foregroundStyle(.red)
                 }
                 .buttonStyle(.borderless)
                 .help("删除该环境字典项")
@@ -399,6 +398,7 @@ private struct OSDictionaryView: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.caption)
+                        .foregroundStyle(.red)
                 }
                 .buttonStyle(.borderless)
                 .help("删除该系统字典项")
@@ -419,6 +419,133 @@ private struct OSDictionaryView: View {
 
     private func add() {
         guard store.addOS(name: newName) else { return }
+        newName = ""
+    }
+}
+
+// MARK: - 分组字典
+
+private struct GroupDictionaryView: View {
+    @EnvironmentObject private var store: Store
+
+    @State private var editingID: GroupDefinition.ID?
+    @State private var editingName = ""
+    @State private var newName = ""
+    @State private var pendingDelete: GroupDefinition?
+    @State private var duplicateHint = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            List {
+                ForEach(store.groupDefinitions) { definition in
+                    groupRow(definition)
+                }
+            }
+            .listStyle(.inset)
+
+            // 底部固定添加区
+            HStack(spacing: 8) {
+                TextField("新分组名（如 预发）", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(add)
+                Button("添加", action: add)
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Text("修改分组名会同步服务器与服务的存量数据；删除分组后其成员变为未分组")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+        }
+        .alert(
+            "删除分组",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            )
+        ) {
+            Button("删除", role: .destructive) {
+                if let target = pendingDelete { store.deleteGroup(target.id) }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除分组「\(pendingDelete?.name ?? "")」后，\(serverCount(of: pendingDelete)) 台服务器与 \(serviceCount(of: pendingDelete)) 个服务将变为未分组。")
+        }
+    }
+
+    private func serverCount(of definition: GroupDefinition?) -> Int {
+        guard let definition else { return 0 }
+        return store.servers.filter { $0.group == definition.name }.count
+    }
+
+    private func serviceCount(of definition: GroupDefinition?) -> Int {
+        guard let definition else { return 0 }
+        return store.services.filter { $0.group == definition.name }.count
+    }
+
+    @ViewBuilder
+    private func groupRow(_ definition: GroupDefinition) -> some View {
+        if editingID == definition.id {
+            HStack(spacing: 8) {
+                TextField("分组名", text: $editingName)
+                    .onSubmit { commitRename(definition) }
+                Button("保存", action: { commitRename(definition) })
+                Button("取消") {
+                    editingID = nil
+                    editingName = ""
+                    duplicateHint = false
+                }
+            }
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(definition.name)
+                if duplicateHint && editingID == nil {
+                    Text("名称重复").font(.caption2).foregroundStyle(.red)
+                }
+                Spacer()
+                Button {
+                    editingID = definition.id
+                    editingName = definition.name
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("重命名（同步存量数据）")
+
+                Button(role: .destructive) {
+                    pendingDelete = definition
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+                .help("删除该分组（成员变为未分组）")
+            }
+        }
+    }
+
+    private func commitRename(_ definition: GroupDefinition) {
+        let ok = store.updateGroup(definition.id, name: editingName)
+        if ok {
+            editingID = nil
+            editingName = ""
+            duplicateHint = false
+        } else {
+            duplicateHint = true
+        }
+    }
+
+    private func add() {
+        guard store.addGroup(name: newName) else { return }
         newName = ""
     }
 }

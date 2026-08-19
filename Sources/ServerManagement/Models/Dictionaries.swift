@@ -27,6 +27,17 @@ struct OSDefinition: Codable, Identifiable, Equatable {
     }
 }
 
+/// 分组字典项（服务器与服务共用一套，如「测试 / 生产」）
+struct GroupDefinition: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    /// 分组名（唯一）
+    var name: String
+
+    init(name: String) {
+        self.name = name
+    }
+}
+
 // MARK: - 内置默认字典
 
 extension EnvDefinition {
@@ -46,6 +57,14 @@ extension OSDefinition {
         "CentOS 7.9",
         "Rocky Linux 9", "Rocky Linux 10",
     ].map { OSDefinition(name: $0) }
+}
+
+extension GroupDefinition {
+    /// 默认分组字典
+    static let defaults: [GroupDefinition] = [
+        GroupDefinition(name: "测试"),
+        GroupDefinition(name: "生产"),
+    ]
 }
 
 // MARK: - 颜色转换

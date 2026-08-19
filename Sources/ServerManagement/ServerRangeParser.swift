@@ -16,11 +16,12 @@ enum ServerRangeParser {
         var values: [String] = []
         var failed: [String] = []
 
-        // 统一分隔符：全角逗号、分号 → 英文逗号
+        // 统一分隔符：全角逗号、分号 → 英文逗号；全角波浪线 → 半角（placeholder 示例用全角避免被渲染成日期范围）
         let normalized = text
             .replacingOccurrences(of: "，", with: ",")
             .replacingOccurrences(of: "；", with: ",")
             .replacingOccurrences(of: ";", with: ",")
+            .replacingOccurrences(of: "〜", with: "~")
 
         for rawSegment in normalized.split(separator: ",", omittingEmptySubsequences: true) {
             let segment = rawSegment.trimmingCharacters(in: .whitespacesAndNewlines)

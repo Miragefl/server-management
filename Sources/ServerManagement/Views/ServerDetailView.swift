@@ -123,6 +123,8 @@ struct ServerDetailView: View {
                     osTag
                 }
 
+                groupTag
+
                 HStack(spacing: 10) {
                     cpuTag
                     memoryTag
@@ -170,7 +172,7 @@ struct ServerDetailView: View {
                     }
                 }
             } label: {
-                Image(systemName: ips.count > 1 ? "plus.circle.dashed" : "chevron.up.chevron.down")
+                Image(systemName: "plus.circle.dashed")
                     .font(.caption2)
             }
             .menuStyle(.borderlessButton)
@@ -188,13 +190,8 @@ struct ServerDetailView: View {
                 .monospacedDigit()
                 .textFieldStyle(.plain)
                 .onChange(of: cpu) { _, _ in saveIfLoaded() }
-            Picker("", selection: $cpuUnit) {
-                ForEach(ServerEditView.cpuUnits, id: \.self) { Text($0).font(.caption) }
-            }
-            .labelsHidden()
-            .controlSize(.mini)
-            .frame(width: 46)
-            .onChange(of: cpuUnit) { _, _ in saveIfLoaded() }
+            unitMenu(selection: $cpuUnit, units: ServerEditView.cpuUnits)
+                .onChange(of: cpuUnit) { _, _ in saveIfLoaded() }
         }
         .font(.callout)
     }
@@ -208,15 +205,24 @@ struct ServerDetailView: View {
                 .monospacedDigit()
                 .textFieldStyle(.plain)
                 .onChange(of: memory) { _, _ in saveIfLoaded() }
-            Picker("", selection: $memoryUnit) {
-                ForEach(ServerEditView.memoryUnits, id: \.self) { Text($0).font(.caption) }
-            }
-            .labelsHidden()
-            .controlSize(.mini)
-            .frame(width: 46)
-            .onChange(of: memoryUnit) { _, _ in saveIfLoaded() }
+            unitMenu(selection: $memoryUnit, units: ServerEditView.memoryUnits)
+                .onChange(of: memoryUnit) { _, _ in saveIfLoaded() }
         }
         .font(.callout)
+    }
+
+    /// 单位选择（与其他下拉统一样式：borderlessButton Menu + 系统指示箭头）
+    private func unitMenu(selection: Binding<String>, units: [String]) -> some View {
+        Menu {
+            ForEach(units, id: \.self) { unit in
+                Button(unit) { selection.wrappedValue = unit }
+            }
+        } label: {
+            Text(selection.wrappedValue)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .font(.caption)
     }
 
     private func infoEditableTag(_ label: String, text: Binding<String>, monospaced: Bool = false) -> some View {
@@ -247,13 +253,43 @@ struct ServerDetailView: View {
                     Button("清空") { os = "" }
                 }
             } label: {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
+                ChevronOnlyLabel()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
         .font(.callout)
+    }
+
+    /// 分组徽章：点开切换（未分组 + 字典候选），选中即写入 Store
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，label 用当前值即可）
+    private var groupTag: some View {
+        HStack(spacing: 6) {
+            Text("分组").foregroundStyle(.secondary)
+            Menu {
+                Button("未分组") { setGroup("") }
+                Divider()
+                ForEach(store.groupDefinitions) { candidate in
+                    Button(candidate.name) { setGroup(candidate.name) }
+                }
+            } label: {
+                Text(currentServer.group.isEmpty ? "—" : currentServer.group)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(currentServer.group.isEmpty ? 0 : 0.14), in: Capsule())
+                    .foregroundStyle(currentServer.group.isEmpty ? .secondary : Color.accentColor)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .font(.callout)
+        .help("切换分组（字典在「环境 / 系统 / 分组」设置中维护）")
+    }
+
+    private func setGroup(_ name: String) {
+        var target = currentServer
+        target.group = name
+        store.upsertServer(target)
     }
 
     /// 凭据区（标题 + 复用组件；变化写回 Store）

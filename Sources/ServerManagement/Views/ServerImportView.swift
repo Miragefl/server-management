@@ -8,6 +8,7 @@ struct ServerImportView: View {
     @State private var hostnameText = ""
     @State private var ipText = ""
     @State private var os = ""
+    @State private var group = ""
     @State private var cpuValue = ""
     @State private var cpuUnit = ServerEditView.cpuUnits[0]
     @State private var memoryValue = ""
@@ -50,11 +51,12 @@ struct ServerImportView: View {
         VStack(spacing: 0) {
             Form {
                 Section("区间表达式（逗号分隔，~ 表示递增区间）") {
-                    TextField("hostname，如 yd-vm121~125,yd-vm131~134", text: $hostnameText, axis: .vertical)
+                    // placeholder 用全角〜：半角 ~ 加数字会被系统按日期范围渲染成中划线
+                    TextField("hostname，如 yd-vm121〜125,yd-vm131〜134", text: $hostnameText, axis: .vertical)
                         .lineLimit(2...4)
                         .font(.system(.body, design: .monospaced))
                         .textFieldStyle(.roundedBorder)
-                    TextField("IP，如 10.137.32.121~125,10.137.32.131~134", text: $ipText, axis: .vertical)
+                    TextField("IP，如 10.137.32.121〜125,10.137.32.131〜134", text: $ipText, axis: .vertical)
                         .lineLimit(2...4)
                         .font(.system(.body, design: .monospaced))
                         .textFieldStyle(.roundedBorder)
@@ -71,12 +73,12 @@ struct ServerImportView: View {
                                 Button("清空") { os = "" }
                             }
                         } label: {
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption)
+                            ChevronOnlyLabel()
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
                     }
+                    groupRow
                     hardwareSection
                 }
                 previewSection
@@ -97,6 +99,28 @@ struct ServerImportView: View {
         }
     }
 
+    // MARK: - 分组（整批统一）
+
+    /// 分组选择：字典候选 + 未分组；字典可在「环境 / 系统 / 分组」设置中维护
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，label 用当前值即可）
+    private var groupRow: some View {
+        HStack {
+            Text("分组")
+            Spacer(minLength: 12)
+            Menu {
+                Button("未分组") { group = "" }
+                Divider()
+                ForEach(store.groupDefinitions) { candidate in
+                    Button(candidate.name) { group = candidate.name }
+                }
+            } label: {
+                Text(group.isEmpty ? "未分组" : group)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
     // MARK: - 硬件信息（与 ServerEditView 布局一致）
 
     private var hardwareSection: some View {
@@ -107,11 +131,7 @@ struct ServerImportView: View {
                 TextField("", text: $cpuValue, prompt: Text("8").foregroundColor(.secondary))
                     .frame(width: 90)
                     .monospacedDigit()
-                Picker("", selection: $cpuUnit) {
-                    ForEach(ServerEditView.cpuUnits, id: \.self) { Text($0) }
-                }
-                .labelsHidden()
-                .frame(width: 64)
+                unitMenu(selection: $cpuUnit, units: ServerEditView.cpuUnits)
             }
             HStack {
                 Text("内存")
@@ -119,11 +139,7 @@ struct ServerImportView: View {
                 TextField("", text: $memoryValue, prompt: Text("32").foregroundColor(.secondary))
                     .frame(width: 90)
                     .monospacedDigit()
-                Picker("", selection: $memoryUnit) {
-                    ForEach(ServerEditView.memoryUnits, id: \.self) { Text($0) }
-                }
-                .labelsHidden()
-                .frame(width: 64)
+                unitMenu(selection: $memoryUnit, units: ServerEditView.memoryUnits)
             }
             HStack {
                 Text("硬盘")
@@ -132,6 +148,19 @@ struct ServerImportView: View {
                     .frame(maxWidth: 240, alignment: .trailing)
             }
         }
+    }
+
+    /// 单位选择（与其他下拉统一样式：borderlessButton Menu + 系统指示箭头）
+    private func unitMenu(selection: Binding<String>, units: [String]) -> some View {
+        Menu {
+            ForEach(units, id: \.self) { unit in
+                Button(unit) { selection.wrappedValue = unit }
+            }
+        } label: {
+            Text(selection.wrappedValue)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: - 预览
@@ -147,12 +176,12 @@ struct ServerImportView: View {
                 let allFailed = hostResult.failedSegments.map { "hostname：\($0)" }
                     + ipResult.failedSegments.map { "IP：\($0)" }
                 if !allFailed.isEmpty {
-                    Label("非法段（将跳过）：" + allFailed.joined(separator: "、"), systemImage: "exclamationmark.triangle")
+                    Label("非法段（将跳过）：" + allFailed.joined(separator: "、"), systemImage: "exclamationmark.triangle.fill")
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }
                 if hostResult.values.count != ipResult.values.count {
-                    Label("hostname 展开数（\(hostResult.values.count)）与 IP 展开数（\(ipResult.values.count)）不一致，需相等后才能导入", systemImage: "xmark.circle")
+                    Label("hostname 展开数（\(hostResult.values.count)）与 IP 展开数（\(ipResult.values.count)）不一致，需相等后才能导入", systemImage: "xmark.circle.fill")
                         .font(.callout)
                         .foregroundStyle(.red)
                 } else if !hostResult.values.isEmpty {
@@ -179,9 +208,10 @@ struct ServerImportView: View {
         Array(zip(hostResult.values, ipResult.values))
     }
 
-    /// 统一配置摘要（OS + 硬件），空项自动跳过
+    /// 统一配置摘要（分组 + OS + 硬件），空项自动跳过
     private var hardwareSummary: String {
         var parts: [String] = []
+        if !group.isEmpty { parts.append("[\(group)]") }
         if !os.isEmpty { parts.append(os) }
         let cpuNum = cpuValue.trimmingCharacters(in: .whitespaces)
         if !cpuNum.isEmpty { parts.append(cpuNum + cpuUnit) }
@@ -204,6 +234,7 @@ struct ServerImportView: View {
                 hostname: pair.0,
                 ips: [pair.1],
                 os: os,
+                group: group,
                 cpu: cpu,
                 memory: memory,
                 disk: diskText.trimmingCharacters(in: .whitespacesAndNewlines)

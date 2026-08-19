@@ -111,6 +111,8 @@ struct ServiceDetailView: View {
                     installTag
                 }
 
+                groupTag
+
                 TextField("添加备注…", text: $remark, axis: .vertical)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -205,6 +207,7 @@ struct ServiceDetailView: View {
     }
 
     /// 安装方式：inline 编辑 + 常用方式下拉（紧贴输入内容）
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，勿再放自定义箭头图标）
     private var installTag: some View {
         HStack(spacing: 2) {
             Text("安装").foregroundStyle(.secondary)
@@ -222,13 +225,43 @@ struct ServiceDetailView: View {
                     Button("清空") { installMethod = "" }
                 }
             } label: {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
+                ChevronOnlyLabel()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
         .font(.callout)
+    }
+
+    /// 分组徽章：点开切换（未分组 + 字典候选），选中即写入 Store
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，label 用当前值即可）
+    private var groupTag: some View {
+        HStack(spacing: 6) {
+            Text("分组").foregroundStyle(.secondary)
+            Menu {
+                Button("未分组") { setGroup("") }
+                Divider()
+                ForEach(store.groupDefinitions) { candidate in
+                    Button(candidate.name) { setGroup(candidate.name) }
+                }
+            } label: {
+                Text(currentService.group.isEmpty ? "—" : currentService.group)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(currentService.group.isEmpty ? 0 : 0.14), in: Capsule())
+                    .foregroundStyle(currentService.group.isEmpty ? .secondary : Color.accentColor)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .font(.callout)
+        .help("切换分组（字典在「环境 / 系统 / 分组」设置中维护）")
+    }
+
+    private func setGroup(_ name: String) {
+        var target = currentService
+        target.group = name
+        store.upsertService(target)
     }
 
     // MARK: - 端口区（多值 + 描述）

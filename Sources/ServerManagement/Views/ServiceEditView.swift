@@ -13,6 +13,7 @@ struct ServiceEditView: View {
     @State private var customEnvInput = ""
     @State private var ports: [ServicePort] = []
     @State private var installMethod = ""
+    @State private var group = ""
     @State private var remark = ""
 
     /// 部署目标：新增=创建后绑定；编辑=调整绑定集合
@@ -34,6 +35,7 @@ struct ServiceEditView: View {
                     envPicker
                     portsEditor
                     installMethodField
+                    groupRow
                 }
                 Section("备注") {
                     TextField("备注", text: $remark, axis: .vertical)
@@ -62,6 +64,7 @@ struct ServiceEditView: View {
                 selectedEnvs = Set(service.envs)
                 ports = service.ports
                 installMethod = service.installMethod
+                group = service.group
                 remark = service.remark
                 targetServerIDs = Set(store.boundServers(of: service.id).map(\.id))
             }
@@ -183,6 +186,7 @@ struct ServiceEditView: View {
     }
 
     /// 安装方式输入框 + 常见方式快捷键
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，勿再放自定义箭头图标）
     private var installMethodField: some View {
         HStack {
             TextField("安装方式（docker / rpm / tar…）", text: $installMethod)
@@ -191,8 +195,27 @@ struct ServiceEditView: View {
                     Button(candidate) { installMethod = candidate }
                 }
             } label: {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption)
+                ChevronOnlyLabel()
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    /// 分组选择：字典候选 + 未分组；字典可在「环境 / 系统 / 分组」设置中维护
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，label 用当前值即可）
+    private var groupRow: some View {
+        HStack {
+            Text("分组")
+            Spacer(minLength: 12)
+            Menu {
+                Button("未分组") { group = "" }
+                Divider()
+                ForEach(store.groupDefinitions) { candidate in
+                    Button(candidate.name) { group = candidate.name }
+                }
+            } label: {
+                Text(group.isEmpty ? "未分组" : group)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -264,6 +287,7 @@ struct ServiceEditView: View {
         target.envs = orderedEnvs
         target.ports = portValues
         target.installMethod = installMethod.trimmingCharacters(in: .whitespacesAndNewlines)
+        target.group = group
         target.remark = remark
         store.upsertService(target)
 

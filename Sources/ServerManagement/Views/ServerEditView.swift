@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 
+/// 纯箭头下拉指示（borderlessButton Menu 自带系统单箭头，透明占位使其独占渲染）
+struct ChevronOnlyLabel: View {
+    var body: some View {
+        Text(verbatim: "").foregroundStyle(.clear)
+    }
+}
+
 /// 服务器新增 / 编辑表单（多 IP + 硬件信息）
 struct ServerEditView: View {
     @EnvironmentObject private var store: Store
@@ -12,6 +19,7 @@ struct ServerEditView: View {
     @State private var hostname = ""
     @State private var ips: [String] = [""]
     @State private var os = ""
+    @State private var group = ""
     @State private var cpuValue = ""
     @State private var cpuUnit = "C"
     @State private var memoryValue = ""
@@ -30,6 +38,7 @@ struct ServerEditView: View {
                     TextField("Hostname", text: $hostname, prompt: Text("必填").foregroundColor(.secondary))
                     ipsEditor
                     osField
+                    groupRow
                 }
                 Section("硬件信息（可选）") {
                     cpuRow
@@ -109,11 +118,7 @@ struct ServerEditView: View {
             TextField("", text: $cpuValue, prompt: Text("8").foregroundColor(.secondary))
                 .frame(width: 90)
                 .monospacedDigit()
-            Picker("", selection: $cpuUnit) {
-                ForEach(Self.cpuUnits, id: \.self) { Text($0) }
-            }
-            .labelsHidden()
-            .frame(width: 64)
+            unitMenu(selection: $cpuUnit, units: Self.cpuUnits)
         }
     }
 
@@ -124,11 +129,7 @@ struct ServerEditView: View {
             TextField("", text: $memoryValue, prompt: Text("32").foregroundColor(.secondary))
                 .frame(width: 90)
                 .monospacedDigit()
-            Picker("", selection: $memoryUnit) {
-                ForEach(Self.memoryUnits, id: \.self) { Text($0) }
-            }
-            .labelsHidden()
-            .frame(width: 64)
+            unitMenu(selection: $memoryUnit, units: Self.memoryUnits)
         }
     }
 
@@ -144,6 +145,7 @@ struct ServerEditView: View {
     // MARK: - 系统
 
     /// 操作系统输入框 + 常用系统快捷选择（可自由输入其他值）
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，勿再放自定义箭头图标）
     private var osField: some View {
         HStack {
             TextField("操作系统", text: $os, prompt: Text("如 Ubuntu 24.04").foregroundColor(.secondary))
@@ -156,12 +158,46 @@ struct ServerEditView: View {
                     Button("清空") { os = "" }
                 }
             } label: {
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption)
+                ChevronOnlyLabel()
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
+    }
+
+    // MARK: - 分组
+
+    /// 分组选择：字典候选 + 未分组；字典可在「环境 / 系统 / 分组」设置中维护
+    /// （macOS 15+ borderlessButton Menu 自带下拉箭头，label 用当前值即可）
+    private var groupRow: some View {
+        HStack {
+            Text("分组")
+            Spacer(minLength: 12)
+            Menu {
+                Button("未分组") { group = "" }
+                Divider()
+                ForEach(store.groupDefinitions) { candidate in
+                    Button(candidate.name) { group = candidate.name }
+                }
+            } label: {
+                Text(group.isEmpty ? "未分组" : group)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    /// 单位选择（与其他下拉统一样式：borderlessButton Menu + 系统指示箭头）
+    private func unitMenu(selection: Binding<String>, units: [String]) -> some View {
+        Menu {
+            ForEach(units, id: \.self) { unit in
+                Button(unit) { selection.wrappedValue = unit }
+            }
+        } label: {
+            Text(selection.wrappedValue)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
     }
 
     // MARK: - 校验与保存
@@ -185,6 +221,7 @@ struct ServerEditView: View {
         hostname = server.hostname
         ips = server.ips.isEmpty ? [""] : server.ips
         os = server.os
+        group = server.group
         // 解析详情页自由格式：数字 + 单位（如 "8C"、"32G"）；无单位原样保留在数值框
         let parsedCPU = parseValueUnit(server.cpu, units: Self.cpuUnits)
         cpuValue = parsedCPU.value
@@ -213,6 +250,7 @@ struct ServerEditView: View {
         target.hostname = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
         target.ips = cleanedIPs
         target.os = os.trimmingCharacters(in: .whitespacesAndNewlines)
+        target.group = group
 
         let cpuNum = cpuValue.trimmingCharacters(in: .whitespaces)
         target.cpu = cpuNum.isEmpty ? "" : cpuNum + cpuUnit

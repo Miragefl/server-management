@@ -36,6 +36,13 @@ struct ServerRangeParserTests {
         #expect(spaced.values == ["yd-vm121", "yd-vm122"])
     }
 
+    @Test("全角波浪线〜与半角~等价（placeholder 复制容错）")
+    func testFullWidthTilde() {
+        let r = ServerRangeParser.expand("yd-vm121〜125")
+        #expect(r.values == ["yd-vm121", "yd-vm122", "yd-vm123", "yd-vm124", "yd-vm125"])
+        #expect(r.failedSegments.isEmpty)
+    }
+
     @Test("非法段进失败列表，不中断其余段")
     func testInvalidSegments() {
         // 结束侧非数字 / 起始侧无数字 / 结束<起始

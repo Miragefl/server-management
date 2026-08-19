@@ -21,6 +21,13 @@ struct ServerListView: View {
     @State private var serversExpanded = false
     @State private var servicesExpanded = true
 
+    // 分组手风琴状态：当前展开的分组名（nil = 全收起）；默认展开第一个分组
+    @State private var expandedServerGroup: String?
+    @State private var expandedServiceGroup: String?
+
+    /// 当前悬停行（单一数据源；行视图被收起移除时 onHover 退出事件不可靠，集中管理便于清理）
+    @State private var hovered: ContentView.SidebarSelection?
+
     private var filteredServers: [Server] {
         store.filteredServers(keyword: keyword)
     }
@@ -33,6 +40,7 @@ struct ServerListView: View {
             $0.name.lowercased().contains(lower)
                 || $0.envs.contains { $0.lowercased().contains(lower) }
                 || $0.installMethod.lowercased().contains(lower)
+                || $0.group.lowercased().contains(lower)
         }
     }
 
@@ -45,8 +53,12 @@ struct ServerListView: View {
                 serviceSection
             }
             .padding(.vertical, 4)
+            .background(ScrollBarHider())
         }
+        .scrollIndicators(.hidden)
         .searchable(text: $keyword, prompt: Text("多关键字空格分隔，如：kafka sit"))
+        .onChange(of: keyword) { _, _ in hovered = nil }
+        .onAppear(perform: expandFirstGroupsIfNeeded)
         .overlay {
             if filteredServers.isEmpty && filteredServices.isEmpty {
                 ContentUnavailableView.search(text: keyword)
@@ -75,7 +87,7 @@ struct ServerListView: View {
                     Button {
                         isShowingSettings = true
                     } label: {
-                        Label("环境与操作系统…", systemImage: "gearshape")
+                        Label("环境 / 系统 / 分组…", systemImage: "gearshape")
                     }
                 } label: {
                     Label("新增", systemImage: "plus")
@@ -146,14 +158,47 @@ struct ServerListView: View {
 
     // MARK: - 区块
 
+    /// 分组顺序：字典序 + 未分组垫底（仅有未分组项时展示）
+    private var serverGroupOrder: [String] {
+        var names = store.groupDefinitions.map(\.name)
+        let known = Set(names)
+        names.append(contentsOf: filteredServers.map(\.group).filter { !$0.isEmpty && !known.contains($0) })
+        if filteredServers.contains(where: { $0.group.isEmpty }) {
+            names.append("")
+        }
+        return names
+    }
+
+    private var serviceGroupOrder: [String] {
+        var names = store.groupDefinitions.map(\.name)
+        let known = Set(names)
+        names.append(contentsOf: filteredServices.map(\.group).filter { !$0.isEmpty && !known.contains($0) })
+        if filteredServices.contains(where: { $0.group.isEmpty }) {
+            names.append("")
+        }
+        return names
+    }
+
     private var serverSection: some View {
         Section {
             if serversExpanded {
-                ForEach(filteredServers) { server in
-                    sidebarRow(serverRow(server), id: .server(server.id)) {
-                        Button("编辑…") { editingServer = server }
-                        Divider()
-                        Button("删除…", role: .destructive) { serverPendingDelete = server }
+                ForEach(serverGroupOrder, id: \.self) { group in
+                    let members = filteredServers.filter { $0.group == group }
+                    if !members.isEmpty {
+                        groupHeader(
+                            name: group,
+                            count: members.count,
+                            isExpanded: expandedServerGroup == group
+                        ) { toggleServerGroup(group) }
+                        if expandedServerGroup == group {
+                            ForEach(members) { server in
+                                sidebarRow(serverRow(server), id: .server(server.id)) {
+                                    Button("编辑…") { editingServer = server }
+                                    Divider()
+                                    Button("删除…", role: .destructive) { serverPendingDelete = server }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -163,18 +208,33 @@ struct ServerListView: View {
                 count: filteredServers.count,
                 icon: "server.rack",
                 isExpanded: serversExpanded
-            ) { serversExpanded.toggle() }
+            ) {
+                hovered = nil
+                serversExpanded.toggle()
+            }
         }
     }
 
     private var serviceSection: some View {
         Section {
             if servicesExpanded {
-                ForEach(filteredServices) { service in
-                    sidebarRow(serviceRow(service), id: .service(service.id)) {
-                        Button("编辑…") { editingService = service }
-                        Divider()
-                        Button("删除…", role: .destructive) { servicePendingDelete = service }
+                ForEach(serviceGroupOrder, id: \.self) { group in
+                    let members = filteredServices.filter { $0.group == group }
+                    if !members.isEmpty {
+                        groupHeader(
+                            name: group,
+                            count: members.count,
+                            isExpanded: expandedServiceGroup == group
+                        ) { toggleServiceGroup(group) }
+                        if expandedServiceGroup == group {
+                            ForEach(members) { service in
+                                sidebarRow(serviceRow(service), id: .service(service.id)) {
+                                    Button("编辑…") { editingService = service }
+                                    Divider()
+                                    Button("删除…", role: .destructive) { servicePendingDelete = service }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -184,16 +244,73 @@ struct ServerListView: View {
                 count: filteredServices.count,
                 icon: "shippingbox",
                 isExpanded: servicesExpanded
-            ) { servicesExpanded.toggle() }
+            ) {
+                hovered = nil
+                servicesExpanded.toggle()
+            }
         }
+    }
+
+    /// 手风琴切换：点已展开组收起，点其他组展开并收起其余（行被移除时 onHover 退出不可靠，顺手清悬停）
+    private func toggleServerGroup(_ group: String) {
+        hovered = nil
+        expandedServerGroup = expandedServerGroup == group ? nil : group
+    }
+
+    private func toggleServiceGroup(_ group: String) {
+        hovered = nil
+        expandedServiceGroup = expandedServiceGroup == group ? nil : group
+    }
+
+    /// 首次进入默认展开第一个分组（仅初始化一次；之后跟随用户操作）
+    private func expandFirstGroupsIfNeeded() {
+        if expandedServerGroup == nil {
+            expandedServerGroup = serverGroupOrder.first
+        }
+        if expandedServiceGroup == nil {
+            expandedServiceGroup = serviceGroupOrder.first
+        }
+    }
+
+    /// 分组小标题（空名 = 未分组；不吸顶，随内容滚动；点击手风琴展开/收起）
+    private func groupHeader(name: String, count: Int, isExpanded: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                Image(systemName: name.isEmpty ? "tray" : "folder")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(name.isEmpty ? "未分组" : name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text("(\(count))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .padding(.top, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// 行容器：点击选中 + 选中/悬停高亮 + 右键菜单（替代 List 原生 selection）
     private func sidebarRow(_ content: some View, id: ContentView.SidebarSelection, @ViewBuilder menu: () -> some View) -> some View {
         content
-            .modifier(SidebarRowHighlight(isSelected: selection == id))
+            .modifier(SidebarRowHighlight(isSelected: selection == id, isHovered: hovered == id))
             .contentShape(Rectangle())
             .onTapGesture { selection = id }
+            .onHover { entering in
+                if entering {
+                    hovered = id
+                } else if hovered == id {
+                    hovered = nil
+                }
+            }
             .contextMenu(menuItems: menu)
             .padding(.horizontal, 8)
     }
@@ -284,22 +401,45 @@ struct ServerListView: View {
     /// 环境配色：prod 红 / uat 橙 / sit 蓝 / 其他灰
 }
 
-/// 侧栏行高亮：选中淡强调色、悬停淡灰
+/// 侧栏行高亮（纯展示，状态由父视图管理）：选中淡强调色、悬停淡灰
 private struct SidebarRowHighlight: ViewModifier {
     let isSelected: Bool
-    @State private var isHovered = false
+    let isHovered: Bool
 
     func body(content: Content) -> some View {
         content
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.accentColor.opacity(0.22))
+                        .fill(Color.accentColor.opacity(0.2))
                 } else if isHovered {
                     RoundedRectangle(cornerRadius: 5)
                         .fill(Color.primary.opacity(0.06))
                 }
             }
-            .onHover { isHovered = $0 }
     }
+}
+
+/// 兜底隐藏宿主 NSScrollView 的滚动条
+/// （SwiftUI .scrollIndicators(.hidden) 在侧栏容器内、内容展开重建 scroller 时有失效场景；
+///   关闭 NSScroller 不影响滚轮 / 触控板滚动）
+private struct ScrollBarHider: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            // 从占位视图沿 superview 链向上找最近的 NSScrollView（即本 SwiftUI ScrollView 的桥接宿主）
+            var current: NSView? = view
+            while let candidate = current {
+                if let scrollView = candidate as? NSScrollView {
+                    scrollView.hasVerticalScroller = false
+                    scrollView.hasHorizontalScroller = false
+                    break
+                }
+                current = candidate.superview
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

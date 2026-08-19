@@ -23,6 +23,8 @@ struct Service: Codable, Identifiable, Equatable, Hashable {
     var ports: [ServicePort]
     /// 安装方式：docker / rpm / tar / brew / ...
     var installMethod: String = ""
+    /// 分组名（如「测试 / 生产」，空 = 未分组；字典见 GroupDefinition）
+    var group: String = ""
     /// 账号凭据列表（可多条，如管理后台账号）
     var credentials: [Credential] = []
     var remark: String = ""
@@ -36,13 +38,14 @@ struct Service: Codable, Identifiable, Equatable, Hashable {
     /// 常见安装方式，供 UI 快捷选择
     static let commonInstallMethods = ["docker", "rpm", "tar", "brew", "binary", "源码编译"]
 
-    init(name: String, envs: [String], ports: [ServicePort], installMethod: String = "", remark: String = "", credentials: [Credential] = []) {
+    init(name: String, envs: [String], ports: [ServicePort], installMethod: String = "", group: String = "", remark: String = "", credentials: [Credential] = []) {
         self.name = name
         self.envs = envs
         self.ports = ports
         self.installMethod = installMethod
-        self.credentials = credentials
+        self.group = group
         self.remark = remark
+        self.credentials = credentials
     }
 
     /// 所有端口均合法（1-65535）；空列表视为有效
@@ -60,7 +63,7 @@ struct Service: Codable, Identifiable, Equatable, Hashable {
     // MARK: - Codable（兼容旧版数据：env 单值 / port 单值 / serverID 从属 / groupID 组）
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, envs, ports, installMethod, credentials, remark, createdAt, updatedAt
+        case id, name, envs, ports, installMethod, group, credentials, remark, createdAt, updatedAt
         case legacyEnv = "env"
         case legacyPort = "port"
         case legacyServerID = "serverID"
@@ -88,6 +91,7 @@ struct Service: Codable, Identifiable, Equatable, Hashable {
             ports = []
         }
         installMethod = try c.decodeIfPresent(String.self, forKey: .installMethod) ?? ""
+        group = try c.decodeIfPresent(String.self, forKey: .group) ?? ""
         credentials = try c.decodeIfPresent([Credential].self, forKey: .credentials) ?? []
         remark = try c.decodeIfPresent(String.self, forKey: .remark) ?? ""
         createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -101,6 +105,7 @@ struct Service: Codable, Identifiable, Equatable, Hashable {
         try c.encode(envs, forKey: .envs)
         try c.encode(ports, forKey: .ports)
         try c.encode(installMethod, forKey: .installMethod)
+        try c.encode(group, forKey: .group)
         try c.encode(credentials, forKey: .credentials)
         try c.encode(remark, forKey: .remark)
         try c.encode(createdAt, forKey: .createdAt)
@@ -117,6 +122,7 @@ struct LegacyServiceRecord: Codable {
     var ports: [ServicePort]?
     var port: Int?
     var installMethod: String?
+    var group: String?
     var credentials: [Credential]?
     var remark: String?
     var createdAt: Date?
@@ -141,6 +147,7 @@ extension Service {
             envs: legacy.envs ?? (legacy.env.map { [$0] } ?? []),
             ports: migratedPorts,
             installMethod: legacy.installMethod ?? "",
+            group: legacy.group ?? "",
             remark: legacy.remark ?? "",
             credentials: legacy.credentials ?? []
         )

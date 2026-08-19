@@ -16,12 +16,13 @@
 - 入口与导航：左侧双区块列表 + 右侧详情，macOS NavigationSplitView 布局
 
 ## 数据模型
-- `Server`：id、hostname、ips（多 IP）、os、cpu、memory、disk、credentials（账号列表）、remark、createdAt、updatedAt
-- `Service`：id、name、envs（环境数组）、ports（端口数组，每项带可选描述）、installMethod、credentials（账号列表）、remark
+- `Server`：id、hostname、ips（多 IP）、os、group（分组名，空 = 未分组）、cpu、memory、disk、credentials（账号列表）、remark、createdAt、updatedAt
+- `Service`：id、name、envs（环境数组）、ports（端口数组，每项带可选描述）、installMethod、group（分组名，空 = 未分组）、credentials（账号列表）、remark
 - `Credential`：id、username、password、remark（用途，如 root / 管理后台）、createdAt（内嵌于宿主实体，随宿主级联删除；全空行保存时过滤）
 - `Deployment`：id、serverID、serviceID、createdAt（多对多连接记录，重复绑定幂等忽略）
-- 字典：`EnvDefinition`（name + colorHex?）、`OSDefinition`（name），存于 data.json（key：envDictionary / osDictionary），缺省自动初始化内置默认；改环境/OS 名会同步刷写业务数据引用；颜色自定义优先、未配置回退默认规则（prod 红 / uat 橙 / sit 蓝 / 其他灰）
-- 删除语义：删服务器→级联删其 Deployment（服务保留）；删服务→级联删其 Deployment（服务器保留）；删字典项→业务数据旧值保留
+- 字典：`EnvDefinition`（name + colorHex?）、`OSDefinition`（name）、`GroupDefinition`（name，服务器与服务共用一套），存于 data.json（key：envDictionary / osDictionary / groupDictionary），缺省自动初始化内置默认；改环境/OS/分组名会同步刷写业务数据引用；颜色自定义优先、未配置回退默认规则（prod 红 / uat 橙 / sit 蓝 / 其他灰）
+- 分组：侧栏两大区块内按分组嵌套小标题（字典序 + 未分组垫底）；新增/批量导入/详情页可就地选择分组；搜索载体含分组名
+- 删除语义：删服务器→级联删其 Deployment（服务保留）；删服务→级联删其 Deployment（服务器保留）；删环境/OS 字典项→业务数据旧值保留；删分组字典项→成员归属清空（变为未分组）
 - 存储为 JSON 文件（App Support 目录），连接 key 磁盘名为 `bindings`
 
 ## 关键决策
