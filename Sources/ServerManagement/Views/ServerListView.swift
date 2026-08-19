@@ -66,6 +66,9 @@ struct ServerListView: View {
         }
         .toolbar {
             ToolbarItem {
+                UpdateButton()
+            }
+            ToolbarItem {
                 Menu {
                     Button {
                         isAdding = true
