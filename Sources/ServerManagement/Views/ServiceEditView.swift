@@ -15,6 +15,7 @@ struct ServiceEditView: View {
     @State private var installMethod = ""
     @State private var group = ""
     @State private var remark = ""
+    @State private var credentials: [Credential] = []
 
     /// 部署目标：新增=创建后绑定；编辑=调整绑定集合
     @State private var targetServerIDs: Set<Server.ID> = []
@@ -37,6 +38,9 @@ struct ServiceEditView: View {
                     installMethodField
                     groupRow
                 }
+                Section("账号") {
+                    CredentialsSectionView(credentials: $credentials, onCommit: {})
+                }
                 Section("备注") {
                     TextField("备注", text: $remark, axis: .vertical)
                         .lineLimit(2...4)
@@ -57,7 +61,7 @@ struct ServiceEditView: View {
             }
             .padding(12)
         }
-        .frame(width: 480, height: 700)
+        .frame(width: 480, height: 780)
         .onAppear {
             if let service {
                 name = service.name
@@ -66,6 +70,7 @@ struct ServiceEditView: View {
                 installMethod = service.installMethod
                 group = service.group
                 remark = service.remark
+                credentials = service.credentials
                 targetServerIDs = Set(store.boundServers(of: service.id).map(\.id))
             }
         }
@@ -289,6 +294,7 @@ struct ServiceEditView: View {
         target.installMethod = installMethod.trimmingCharacters(in: .whitespacesAndNewlines)
         target.group = group
         target.remark = remark
+        target.credentials = credentials
         store.upsertService(target)
 
         // 同步部署目标：勾选的绑定，取消的解绑
