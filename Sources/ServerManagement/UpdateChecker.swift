@@ -56,6 +56,9 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// 检查 GitHub 最新 Release（去 tag 前缀 v）
+    /// 走 github.com 网页通道（releases/latest 的 302 Location），不受 api.github.com 匿名限流（60 次/时/IP）影响；
+    /// 配置了代理先走代理（SOCKS5 优先，未配用 HTTP(S)），失败自动降级直连重试。
+    /// brew 升级下载仍走代理（大文件直连易被重置）。
     @MainActor
     func checkForUpdates() async {
         guard let current = Self.currentVersion else {
@@ -63,27 +66,70 @@ final class UpdateChecker: ObservableObject {
             return
         }
         state = .checking
-        var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.owner)/\(Self.repo)/releases/latest")!)
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        req.timeoutInterval = 10
         do {
-            let (data, resp) = try await makeSession().data(for: req)
-            guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
-                state = .failed("GitHub 接口不可用（HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)）")
-                return
-            }
-            struct Release: Decodable { let tag_name: String }
-            let release = try JSONDecoder().decode(Release.self, from: data)
-            let latest = release.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
-            guard !latest.isEmpty else {
-                state = .failed("Release tag 无效：\(release.tag_name)")
-                return
-            }
+            let latest = try await fetchLatestTag(viaProxy: settings.hasProxy)
             state = Self.isVersion(latest, newerThan: current)
                 ? .available(version: latest)
                 : .upToDate
         } catch {
-            state = .failed("网络错误：\(error.localizedDescription)")
+            guard settings.hasProxy else {
+                state = .failed(Self.describe(error))
+                return
+            }
+            // 代理失败 → 直连兜底；直连也失败才报双路错误
+            let proxyError = error
+            do {
+                let latest = try await fetchLatestTag(viaProxy: false)
+                state = Self.isVersion(latest, newerThan: current)
+                    ? .available(version: latest)
+                    : .upToDate
+            } catch {
+                state = .failed("代理检查失败：\(Self.describe(proxyError))；直连也失败：\(Self.describe(error))")
+            }
+        }
+    }
+
+    /// 请求 releases/latest（不跟随重定向），从 302 Location 提取 tag（如 "…/tag/v0.3.2" → "0.3.2"）
+    private func fetchLatestTag(viaProxy: Bool) async throws -> String {
+        var req = URLRequest(url: URL(string: "https://github.com/\(Self.owner)/\(Self.repo)/releases/latest")!)
+        req.timeoutInterval = 10
+        let session: URLSession
+        if viaProxy, let proxy = settings.preferredProxy {
+            let cfg = URLSessionConfiguration.default
+            cfg.connectionProxyDictionary = proxy.connectionProxyDictionary
+            session = URLSession(configuration: cfg)
+        } else {
+            session = .shared
+        }
+        let (_, resp) = try await session.data(for: req)
+        guard let http = resp as? HTTPURLResponse else {
+            throw CheckError.http(-1)
+        }
+        guard http.statusCode == 302,
+              let location = http.value(forHTTPHeaderField: "Location") else {
+            // 200 = 无 release 或被网页端挑战（罕见）；其他状态按 HTTP 错误报
+            throw CheckError.http(http.statusCode)
+        }
+        let tag = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "/").last.map(String.init) ?? ""
+        let latest = tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
+        guard !latest.isEmpty else { throw CheckError.badTag(tag) }
+        return latest
+    }
+
+    private enum CheckError: Error {
+        case http(Int)
+        case badTag(String)
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error {
+        case CheckError.http(let code):
+            return "HTTP \(code)"
+        case CheckError.badTag(let tag):
+            return "Release tag 无效：\(tag)"
+        default:
+            return "网络错误：\(error.localizedDescription)"
         }
     }
 
@@ -92,7 +138,7 @@ final class UpdateChecker: ObservableObject {
     func performUpgrade() {
         if let brew = Self.brewPath(), Self.isInstalledViaBrew(brewPath: brew) {
             isUpgrading = true
-            Self.runUpgradeScript(brewPath: brew, proxy: settings.proxy)
+            Self.runUpgradeScript(brewPath: brew, httpProxy: settings.httpProxy, socksProxy: settings.socksProxy)
             // 给 UI 一点时间展示「升级中」，随后脚本会接管（先等 app 退出）
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 NSApplication.shared.terminate(nil)
@@ -102,14 +148,6 @@ final class UpdateChecker: ObservableObject {
                 NSWorkspace.shared.open(url)
             }
         }
-    }
-
-    /// 检查更新用的会话：配置了代理走代理，否则系统默认（直连）
-    private func makeSession() -> URLSession {
-        guard let proxy = settings.proxy else { return .shared }
-        let cfg = URLSessionConfiguration.default
-        cfg.connectionProxyDictionary = proxy.connectionProxyDictionary
-        return URLSession(configuration: cfg)
     }
 
     // MARK: - brew 探测与升级脚本
@@ -140,16 +178,25 @@ final class UpdateChecker: ObservableObject {
 
     /// 写升级脚本并 detached 执行：
     /// 等 app 退出 → brew upgrade → xattr 去隔离 → 重新启动
-    /// 配置了代理时向脚本注入 HTTP(S)_PROXY / ALL_PROXY（brew 内部 curl 走代理）
-    static func runUpgradeScript(brewPath: String, proxy: ProxyConfig?) {
+    /// 配置了代理时向脚本注入 HTTP(S)_PROXY 与 ALL_PROXY（brew 内部 curl 按需各取）
+    static func runUpgradeScript(brewPath: String, httpProxy: ProxyConfig?, socksProxy: ProxyConfig?) {
         let brewDir = (brewPath as NSString).deletingLastPathComponent
         let appPath = "/Applications/\(appName).app"
         var proxyExports = ""
-        if let proxy {
-            let u = proxy.urlText
-            proxyExports = """
-            export HTTP_PROXY="\(u)" HTTPS_PROXY="\(u)" ALL_PROXY="\(u)"
-            export http_proxy="\(u)" https_proxy="\(u)" all_proxy="\(u)"
+        if let http = httpProxy {
+            let u = http.urlText
+            proxyExports += """
+            export HTTP_PROXY="\(u)" HTTPS_PROXY="\(u)"
+            export http_proxy="\(u)" https_proxy="\(u)"
+
+            """
+        }
+        if let socks = socksProxy {
+            let u = socks.urlText
+            proxyExports += """
+            export ALL_PROXY="\(u)"
+            export all_proxy="\(u)"
+
             """
         }
         let script = """

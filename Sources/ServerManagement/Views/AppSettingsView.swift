@@ -9,38 +9,76 @@ struct AppSettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("例如：127.0.0.1:7890", text: $settings.proxyText)
+                    TextField("例如：127.0.0.1:7890", text: $settings.httpProxyText)
                         .autocorrectionDisabled()
                         .textFieldStyle(.roundedBorder)
+                    statusIcon(settings.httpProxyText, parsed: settings.httpProxy)
                 } header: {
-                    Text("网络代理")
+                    Text("HTTP(S) 代理")
                 } footer: {
-                    footer
+                    if settings.httpProxyText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("用于 API 检查与 brew 下载。混合端口的代理填这里即可。")
+                    }
+                }
+
+                Section {
+                    TextField("例如：socks5://127.0.0.1:7891", text: $settings.socksProxyText)
+                        .autocorrectionDisabled()
+                        .textFieldStyle(.roundedBorder)
+                    statusIcon(settings.socksProxyText, parsed: settings.socksProxy)
+                } header: {
+                    Text("SOCKS5 代理")
+                } footer: {
+                    if settings.socksProxyText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        Text("可选；配置后 API 检查优先走 SOCKS5。")
+                    }
+                }
+
+                Section {
+                    Text(summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } footer: {
+                    Text("两框均可独立配置；都留空则全部直连。host:port、http://、socks5:// 格式均可。")
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("设置")
+            .navigationTitle("网络代理")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
                 }
             }
         }
-        .frame(width: 460, height: 240)
+        .frame(width: 460, height: 380)
     }
 
-    /// 输入实时反馈：空 = 直连；有效 = 走代理；无效 = 红字提示
+    /// 单框状态行：空 = 灰色「未启用」；有效 = 绿 ✓ + 代理串；无效 = 橙色格式提示
     @ViewBuilder
-    private var footer: some View {
-        let trimmed = settings.proxyText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func statusIcon(_ text: String, parsed: ProxyConfig?) -> some View {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            Text("未配置：检查更新与升级直连（沿用系统默认网络）。")
-        } else if let proxy = settings.proxy {
-            Label("将使用代理 \(proxy.urlText)（检查更新与 brew 升级）。", systemImage: "checkmark.circle")
+            Label("未启用", systemImage: "minus.circle")
+                .foregroundStyle(.secondary)
+        } else if let proxy = parsed {
+            Label(proxy.urlText, systemImage: "checkmark.circle")
                 .foregroundStyle(.green)
         } else {
-            Label("格式无效，支持 host:port、http://host:port、socks5://host:port。", systemImage: "exclamationmark.triangle")
+            Label("格式无效（支持 host:port / http:// / socks5://）", systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
+        }
+    }
+
+    /// 底部汇总：当前生效的网络策略
+    private var summary: String {
+        switch (settings.httpProxy, settings.socksProxy) {
+        case (nil, nil):
+            return "当前：直连（未配置代理）。"
+        case (let http, let socks):
+            var parts: [String] = []
+            if let http { parts.append("HTTP(S) \(http.urlText)") }
+            if let socks { parts.append("SOCKS5 \(socks.urlText)") }
+            return "当前：\(parts.joined(separator: "；"))，API 检查优先 SOCKS5，失败自动降级直连。"
         }
     }
 }
