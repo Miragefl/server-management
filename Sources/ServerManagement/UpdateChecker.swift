@@ -90,17 +90,16 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// 请求 releases/latest（不跟随重定向），从 302 Location 提取 tag（如 "…/tag/v0.3.2" → "0.3.2"）
+    /// URLSession 默认跟随重定向（会拿到 200 的 tag 页），须用 delegate 拦截才能拿到 302
     private func fetchLatestTag(viaProxy: Bool) async throws -> String {
         var req = URLRequest(url: URL(string: "https://github.com/\(Self.owner)/\(Self.repo)/releases/latest")!)
         req.timeoutInterval = 10
-        let session: URLSession
+        let cfg = URLSessionConfiguration.default
         if viaProxy, let proxy = settings.preferredProxy {
-            let cfg = URLSessionConfiguration.default
             cfg.connectionProxyDictionary = proxy.connectionProxyDictionary
-            session = URLSession(configuration: cfg)
-        } else {
-            session = .shared
         }
+        let session = URLSession(configuration: cfg, delegate: NoRedirectDelegate(), delegateQueue: nil)
+        defer { session.finishTasksAndInvalidate() }
         let (_, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw CheckError.http(-1)
@@ -117,6 +116,19 @@ final class UpdateChecker: ObservableObject {
         return latest
     }
 
+    /// 拒绝 HTTP 重定向的 session delegate（completionHandler(nil) = 不跟随）
+    private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+    }
+
     private enum CheckError: Error {
         case http(Int)
         case badTag(String)
@@ -124,6 +136,8 @@ final class UpdateChecker: ObservableObject {
 
     private static func describe(_ error: Error) -> String {
         switch error {
+        case CheckError.http(200):
+            return "GitHub 返回异常（未拿到重定向，可能被网页端挑战，请稍后再试）"
         case CheckError.http(let code):
             return "HTTP \(code)"
         case CheckError.badTag(let tag):
