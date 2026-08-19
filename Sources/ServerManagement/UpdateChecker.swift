@@ -7,6 +7,7 @@ import AppKit
 /// 升级链路（brew 安装时）：
 /// 退出 app → detached 脚本执行 brew upgrade --cask → xattr 去隔离 → open 重启
 /// 非 brew 安装时降级为打开 Release 页面手动下载
+/// 配置了代理（AppSettings）时：检查请求与 brew 升级均走代理，否则直连
 final class UpdateChecker: ObservableObject {
 
     /// 检查/升级状态
@@ -22,6 +23,12 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var state: State = .idle
     /// 正在执行升级（app 即将退出）
     @Published private(set) var isUpgrading = false
+
+    private let settings: AppSettings
+
+    init(settings: AppSettings) {
+        self.settings = settings
+    }
 
     private static let owner = "Miragefl"
     private static let repo = "server-management"
@@ -60,7 +67,7 @@ final class UpdateChecker: ObservableObject {
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = 10
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await makeSession().data(for: req)
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
                 state = .failed("GitHub 接口不可用（HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)）")
                 return
@@ -85,7 +92,7 @@ final class UpdateChecker: ObservableObject {
     func performUpgrade() {
         if let brew = Self.brewPath(), Self.isInstalledViaBrew(brewPath: brew) {
             isUpgrading = true
-            Self.runUpgradeScript(brewPath: brew)
+            Self.runUpgradeScript(brewPath: brew, proxy: settings.proxy)
             // 给 UI 一点时间展示「升级中」，随后脚本会接管（先等 app 退出）
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 NSApplication.shared.terminate(nil)
@@ -95,6 +102,14 @@ final class UpdateChecker: ObservableObject {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+
+    /// 检查更新用的会话：配置了代理走代理，否则系统默认（直连）
+    private func makeSession() -> URLSession {
+        guard let proxy = settings.proxy else { return .shared }
+        let cfg = URLSessionConfiguration.default
+        cfg.connectionProxyDictionary = proxy.connectionProxyDictionary
+        return URLSession(configuration: cfg)
     }
 
     // MARK: - brew 探测与升级脚本
@@ -125,11 +140,21 @@ final class UpdateChecker: ObservableObject {
 
     /// 写升级脚本并 detached 执行：
     /// 等 app 退出 → brew upgrade → xattr 去隔离 → 重新启动
-    static func runUpgradeScript(brewPath: String) {
+    /// 配置了代理时向脚本注入 HTTP(S)_PROXY / ALL_PROXY（brew 内部 curl 走代理）
+    static func runUpgradeScript(brewPath: String, proxy: ProxyConfig?) {
         let brewDir = (brewPath as NSString).deletingLastPathComponent
         let appPath = "/Applications/\(appName).app"
+        var proxyExports = ""
+        if let proxy {
+            let u = proxy.urlText
+            proxyExports = """
+            export HTTP_PROXY="\(u)" HTTPS_PROXY="\(u)" ALL_PROXY="\(u)"
+            export http_proxy="\(u)" https_proxy="\(u)" all_proxy="\(u)"
+            """
+        }
         let script = """
         export PATH="\(brewDir):/usr/bin:/bin:/usr/sbin:/sbin"
+        \(proxyExports)
         for i in $(seq 1 15); do
             pgrep -x "\(appName)" >/dev/null 2>&1 || break
             sleep 1

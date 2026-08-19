@@ -5,6 +5,7 @@ struct UpdateButton: View {
     @EnvironmentObject private var updateChecker: UpdateChecker
     @State private var isConfirming = false
     @State private var resultMessage: String?
+    @State private var isShowingAppSettings = false
 
     var body: some View {
         Group {
@@ -61,9 +62,16 @@ struct UpdateButton: View {
             "软件更新",
             isPresented: Binding(get: { resultMessage != nil }, set: { if !$0 { resultMessage = nil } })
         ) {
+            // 网络类失败时提供代理配置入口（sheet 会继承 environmentObjects）
+            if case .failed = updateChecker.state {
+                Button("配置代理…") { isShowingAppSettings = true }
+            }
             Button("好", role: .cancel) {}
         } message: {
             Text(resultMessage ?? "")
+        }
+        .sheet(isPresented: $isShowingAppSettings) {
+            AppSettingsView()
         }
     }
 }

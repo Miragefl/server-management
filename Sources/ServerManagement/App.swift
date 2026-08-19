@@ -3,12 +3,20 @@ import SwiftUI
 @main
 struct ServerManagementApp: App {
     @StateObject private var store = Store()
-    @StateObject private var updateChecker = UpdateChecker()
+    @StateObject private var appSettings: AppSettings
+    @StateObject private var updateChecker: UpdateChecker
+
+    init() {
+        let settings = AppSettings()
+        _appSettings = StateObject(wrappedValue: settings)
+        _updateChecker = StateObject(wrappedValue: UpdateChecker(settings: settings))
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(appSettings)
                 .environmentObject(updateChecker)
                 .environment(\.sizeCategory, .large)
                 .task {

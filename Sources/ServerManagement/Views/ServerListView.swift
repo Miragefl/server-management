@@ -11,6 +11,7 @@ struct ServerListView: View {
     @State private var isImporting = false
     @State private var serverPendingDelete: Server?
     @State private var isShowingSettings = false
+    @State private var isShowingAppSettings = false
 
     // 服务区块状态
     @State private var editingService: Service?
@@ -92,6 +93,11 @@ struct ServerListView: View {
                     } label: {
                         Label("环境 / 系统 / 分组…", systemImage: "gearshape")
                     }
+                    Button {
+                        isShowingAppSettings = true
+                    } label: {
+                        Label("网络代理…", systemImage: "network")
+                    }
                 } label: {
                     Label("新增", systemImage: "plus")
                 }
@@ -101,6 +107,9 @@ struct ServerListView: View {
         .sheet(isPresented: $isShowingSettings) {
             DictionarySettingsView()
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $isShowingAppSettings) {
+            AppSettingsView()
         }
         .sheet(isPresented: $isAdding) {
             ServerEditView(server: nil)
