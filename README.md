@@ -61,15 +61,29 @@ swift run              # 运行
 
 ```
 Sources/ServerManagement/
-├── App.swift              # 入口
-├── ContentView.swift      # 左右分栏主界面
-├── Store.swift            # 数据仓库：CRUD + JSON 持久化
+├── App.swift                    # 入口
+├── ContentView.swift            # 左右分栏主界面
+├── Store.swift                  # 数据仓库：CRUD + JSON 持久化
+├── ServerRangeParser.swift      # 批量导入区间表达式解析（yd-vm121~125）
 ├── Models/
-│   ├── Server.swift       # 服务器实体
-│   └── Service.swift      # 服务实体（serverID 外键）
-└── Views/
-    ├── ServerListView.swift    # 左栏：搜索 / 增删改
-    ├── ServerEditView.swift    # 服务器表单
-    ├── ServerDetailView.swift  # 右栏：详情 + 服务表格 + 环境筛选
-    └── ServiceEditView.swift   # 服务表单
+│   ├── Server.swift             # 服务器实体（多 IP）
+│   ├── Service.swift            # 服务实体（多环境/多端口）
+│   ├── Deployment.swift         # 部署关系（服务器↔服务 多对多）
+│   ├── Credential.swift         # 凭据
+│   └── Dictionaries.swift       # 环境/操作系统字典
+├── Views/
+│   ├── ServerListView.swift     # 左栏：服务器/服务双区块（吸顶标题）
+│   ├── ServerEditView.swift     # 服务器表单
+│   ├── ServerDetailView.swift   # 右栏：服务器详情 + 绑定服务 + 环境筛选
+│   ├── ServerImportView.swift   # 批量导入
+│   ├── ServiceEditView.swift    # 服务表单
+│   ├── ServiceDetailView.swift  # 服务详情
+│   ├── CredentialsSectionView.swift  # 凭据区
+│   └── DictionarySettingsView.swift  # 环境与操作系统设置
+Scripts/
+├── test.sh                      # 测试（自动兼容 CLT / Xcode 环境）
+└── package-app.sh               # 打 .app bundle
+Tests/ServerManagementTests/
+├── StoreTests.swift             # 数据仓库/迁移/绑定
+└── ServerRangeParserTests.swift # 区间解析
 ```
